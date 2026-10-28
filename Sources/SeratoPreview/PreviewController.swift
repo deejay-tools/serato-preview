@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import os
+import ScreenCaptureKit
 import SeratoLibrary
 import SeratoPreviewCore
 
@@ -197,7 +198,14 @@ final class PreviewController: ObservableObject {
             } catch {
                 guard generation == clickGeneration else { return }
                 log.error("Cattura non riuscita: \(String(describing: error), privacy: .public)")
-                showMessage("Cattura non riuscita", "\(error)", symbol: "exclamationmark.triangle")
+                let nsError = error as NSError
+                if nsError.domain == SCStreamErrorDomain, nsError.code == SCStreamError.Code.userDeclined.rawValue {
+                    showMessage("Manca il permesso Registrazione schermo",
+                                "Concedilo in Impostazioni di Sistema, poi esci e riapri l'app",
+                                symbol: "lock.shield")
+                } else {
+                    showMessage("Cattura non riuscita", "\(error)", symbol: "exclamationmark.triangle")
+                }
             }
         }
     }
