@@ -105,24 +105,62 @@ then change the `midi` block in `settings.json` (see below). `kind` can be `note
 
 ### Menu
 
-From the headphones icon:
+<img src="docs/menu.png" alt="Serato Preview menu" width="300">
 
-- **Enabled**: turns the app on or off without quitting it;
+From the headphones icon in the menu bar:
+
+- the first two lines show the **status** (Ready, Playing…, Recognizing…) and how many tracks are loaded from the library; missing permissions appear here too, with a shortcut to the right settings page;
+- **Enabled**: turns the app on or off without quitting it; when off, ⌥+click goes to Serato as usual and the MIDI buttons only control Serato;
 - **Stop preview**;
 - **Settings…** (⌘,);
 - **Reload library**: the library is also reloaded automatically when Serato changes it (checked every minute).
 
 ## Settings
 
-The **Settings…** window lets you choose:
+<img src="docs/settings.png" alt="Serato Preview settings" width="420">
 
-- **Language**: Italian, English or the system language;
-- **Activation**: the modifier key for click and ↓ (⌥, ⌃, ⌘⌥, ⌃⌥);
-- **Audio output**: device, channel pair (e.g. 3-4 for the controller's headphones), start point as a percentage of the track (30% by default), volume, seek step;
-- **Serato browser**: the geometry of the track list (see below);
-- **Recognition**: minimum score for a match, fast OCR.
+Open **Settings…** from the menu (⌘,). Changes are kept as a draft until you press **Save**; **Cancel** throws them away, **Defaults** fills the form with the default values (you still need to save).
 
-Everything is saved in `~/Library/Application Support/SeratoPreview/settings.json`, which you can also edit by hand (**Open settings.json** button). Missing keys take their default value.
+### Language
+
+**Language**: Italian, English or *System*, which uses Italian if it's the first language of macOS and English otherwise. The menu and the mini player change as soon as you save.
+
+### Activation
+
+**Key**: the modifier to hold while clicking a row, also used with ↓ to preview the selected row. Choose between ⌥, ⌃, ⌘⌥ and ⌃⌥.
+
+### Audio output
+
+- **Device**: where the preview plays. *System output* follows the macOS default; otherwise pick a specific interface. The number of channels is shown next to each name. To hear the preview only in your headphones, choose the controller.
+- **Channels**: the stereo pair to use. On a 4-channel controller 1-2 is usually the master and **3-4 the headphones** (that's the case for the DDJ-FLX10). Check your controller's manual if in doubt.
+- **Start at**: where the preview starts, as a percentage of the track (0-90%). 30% usually skips the intro and lands in the body of the song.
+- **Volume**: preview volume, independent of Serato.
+- **← → seek step**: how many seconds ← → (and the MIDI back/forward buttons) move, from 1 to 30.
+
+Changing device or channels stops the preview that is playing.
+
+### Serato browser (points)
+
+These values tell the app where Serato's track list is inside its window. They are in points, measured from the window edges. You only need to change them if recognition fails or clicks in the list aren't caught (see [Calibrating the track list](#calibrating-the-track-list)).
+
+- **Row height**: the height of a row in the list (28 with Serato's default font size).
+- **Left / Top / Right / Bottom margin**: distance of the track list from the left, top, right and bottom edges of the window. ⌥+click outside this rectangle goes straight to Serato. *Top* is the most important one: it must point just below the column headers.
+- **Captured rows**: how tall the captured strip around the click is, in rows. With 2 the clicked row is always captured whole, wherever you click inside it.
+- **Truncated text gap**: Serato cuts long titles to fit the column. A text that ends closer than this (in points) to the next column or to the right edge is treated as cut off, and matched as a prefix.
+
+### Recognition
+
+- **Minimum score**: how sure the app must be (0.30-0.95) before playing a track. Lower it if correct tracks are reported as "not recognized"; raise it if the wrong track plays.
+- **Fast OCR**: faster text recognition (a few tens of ms) instead of the accurate one (about a second per row on older Macs). Turn it off only if the text is read badly.
+
+### The settings.json file
+
+Everything is saved in `~/Library/Application Support/SeratoPreview/settings.json`. The **Open settings.json** button opens it in your text editor. Some options exist only there:
+
+- `midi`: the controller buttons (see [DJ controller](#dj-controller-midi));
+- `ocrLanguages`: languages for the OCR, in order of priority (default `["it-IT", "en-US"]`).
+
+Missing keys take their default value. If the file can't be read, the app uses the defaults and shows the error at the bottom of the Settings window. After editing it by hand, quit and reopen the app.
 
 ### Calibrating the track list
 

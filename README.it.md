@@ -105,24 +105,62 @@ e cambia il blocco `midi` in `settings.json` (vedi sotto). `kind` può essere `n
 
 ### Menu
 
-Dall'icona delle cuffie:
+<img src="docs/menu.png" alt="Menu di Serato Preview" width="300">
 
-- **Attivo**: accende o spegne l'app senza chiuderla;
+Dall'icona delle cuffie nella barra dei menu:
+
+- le prime due righe mostrano lo **stato** (Pronto, In ascolto…, Riconosco la traccia…) e quante tracce sono caricate dalla libreria; qui compaiono anche i permessi mancanti, con il collegamento alla pagina giusta delle impostazioni;
+- **Attivo**: accende o spegne l'app senza chiuderla; da spenta, ⌥+clic va a Serato come sempre e i tasti MIDI comandano solo Serato;
 - **Ferma anteprima**;
 - **Impostazioni…** (⌘,);
 - **Ricarica libreria**: la libreria si ricarica anche da sola quando Serato la modifica (controllo ogni minuto).
 
 ## Impostazioni
 
-La finestra **Impostazioni…** permette di scegliere:
+<img src="docs/settings.png" alt="Impostazioni di Serato Preview" width="420">
 
-- **Lingua**: italiano, inglese o la lingua di sistema;
-- **Attivazione**: il tasto modificatore per clic e ↓ (⌥, ⌃, ⌘⌥, ⌃⌥);
-- **Uscita audio**: dispositivo, coppia di canali (es. 3-4 per la cuffia del controller), punto di partenza in percentuale della traccia (30% di predefinito), volume, salto con ← →;
-- **Browser di Serato**: la geometria della lista tracce (vedi sotto);
-- **Riconoscimento**: punteggio minimo per l'abbinamento, OCR veloce.
+Apri **Impostazioni…** dal menu (⌘,). Le modifiche restano in bozza finché non premi **Salva**; **Annulla** le scarta, **Valori predefiniti** riempie la finestra con i valori iniziali (poi va comunque salvato). Lo screenshot mostra l'interfaccia in inglese.
 
-Tutto viene salvato in `~/Library/Application Support/SeratoPreview/settings.json`, che puoi anche modificare a mano (pulsante **Apri settings.json**). Le chiavi mancanti prendono il valore predefinito.
+### Lingua
+
+**Lingua**: italiano, inglese o *Sistema*, che usa l'italiano se è la prima lingua di macOS e l'inglese negli altri casi. Menu e mini-player cambiano appena salvi.
+
+### Attivazione
+
+**Tasto**: il modificatore da tenere premuto mentre clicchi una riga, usato anche con ↓ per ascoltare la riga selezionata. Puoi scegliere fra ⌥, ⌃, ⌘⌥ e ⌃⌥.
+
+### Uscita audio
+
+- **Dispositivo**: dove suona l'anteprima. *Uscita di sistema* segue l'uscita predefinita di macOS; altrimenti scegli una scheda audio precisa. Accanto a ogni nome c'è il numero di canali. Per sentire l'anteprima solo in cuffia, scegli il controller.
+- **Canali**: la coppia stereo da usare. Su un controller a 4 canali di solito 1-2 è il master e **3-4 la cuffia** (è così sul DDJ-FLX10). Nel dubbio controlla il manuale del controller.
+- **Partenza**: da dove parte l'anteprima, in percentuale della traccia (0-90%). Con 30% di solito si salta l'intro e si arriva nel corpo del pezzo.
+- **Volume**: volume dell'anteprima, indipendente da Serato.
+- **Salto con ← →**: di quanti secondi si spostano ← → (e i tasti MIDI indietro/avanti), da 1 a 30.
+
+Se cambi dispositivo o canali, l'anteprima in corso si ferma.
+
+### Browser di Serato (punti)
+
+Questi valori dicono all'app dove si trova la lista tracce dentro la finestra di Serato. Sono in punti e si misurano dai bordi della finestra. Servono solo se il riconoscimento non funziona o i clic nella lista non vengono presi (vedi [Calibrare la lista tracce](#calibrare-la-lista-tracce)).
+
+- **Altezza riga**: l'altezza di una riga della lista (28 con la dimensione del carattere predefinita di Serato).
+- **Margine sinistro / superiore / destro / inferiore**: distanza della lista tracce dai bordi sinistro, superiore, destro e inferiore della finestra. Un ⌥+clic fuori da questo rettangolo va direttamente a Serato. Il più importante è il *superiore*: deve arrivare subito sotto le intestazioni delle colonne.
+- **Righe catturate**: quanto è alta, in righe, la fascia catturata attorno al clic. Con 2 la riga cliccata è sempre catturata intera, ovunque cada il clic al suo interno.
+- **Distanza testo troncato**: Serato taglia i titoli lunghi per farli stare nella colonna. Un testo che finisce a meno di questa distanza (in punti) dalla colonna successiva o dal bordo destro viene considerato tagliato, e confrontato come inizio del titolo.
+
+### Riconoscimento
+
+- **Punteggio minimo**: quanto deve essere sicura l'app (0,30-0,95) prima di suonare una traccia. Abbassalo se tracce giuste risultano "non riconosciute"; alzalo se parte la traccia sbagliata.
+- **OCR veloce**: lettura del testo più rapida (qualche decina di ms) invece di quella accurata (circa un secondo per riga sui Mac meno recenti). Disattivalo solo se il testo viene letto male.
+
+### Il file settings.json
+
+Tutto viene salvato in `~/Library/Application Support/SeratoPreview/settings.json`. Il pulsante **Apri settings.json** lo apre nell'editor di testo. Alcune opzioni esistono solo lì:
+
+- `midi`: i tasti del controller (vedi [Controller DJ](#controller-dj-midi));
+- `ocrLanguages`: lingue per l'OCR, in ordine di priorità (predefinito `["it-IT", "en-US"]`).
+
+Le chiavi mancanti prendono il valore predefinito. Se il file non è leggibile, l'app usa i valori predefiniti e mostra l'errore in fondo alla finestra Impostazioni. Dopo averlo modificato a mano, esci dall'app e riaprila.
 
 ### Calibrare la lista tracce
 
