@@ -2,16 +2,29 @@ import Foundation
 
 // Abbinamento tra il testo letto con l'OCR su una riga del browser e le tracce della libreria.
 //
-// L'OCR restituisce i pezzi di testo della riga (titolo, artista, BPM, tonalità, …) in un ordine
+// L'OCR restituisce i pezzi di testo della riga (titolo, artista, BPM, nome file, …) in un ordine
 // e con una suddivisione che dipendono dalle colonne visibili in Serato, quindi il confronto lavora
 // sulle parole e non sulle colonne:
 // - richiamo: quante parole di titolo e artista della traccia compaiono nella riga;
-//   se la riga è troncata ("…") le parole finali mancanti non penalizzano, ma almeno metà
-//   delle parole del campo deve essere considerata;
 // - precisione: quante parole della riga sono spiegate dalla traccia (anche album, genere,
-//   anno, BPM, tonalità, durata), utile per distinguere versioni con lo stesso titolo.
-// Le parole si confrontano in modo approssimato (Levenshtein) per tollerare gli errori dell'OCR.
-// A parità di punteggio vince un file locale, l'unico che si può ascoltare.
+//   anno, BPM, tonalità, durata, nome file e cartella), utile per distinguere versioni con lo
+//   stesso titolo.
+// Serato taglia i testi troppo lunghi al bordo della colonna, senza "…": una cella troncata
+// (`RowCell.truncated`) permette che la sua ultima parola sia solo l'inizio di una parola della
+// traccia, e le parole del campo che seguono quel punto non penalizzano.
+// Le parole si confrontano prima in modo esatto e poi approssimato (Levenshtein) per tollerare
+// gli errori dell'OCR. A parità di punteggio vince un file locale, l'unico che si può ascoltare.
+
+public struct RowCell: Sendable {
+    public let text: String
+    /// Il testo è tagliato al bordo della colonna.
+    public let truncated: Bool
+
+    public init(text: String, truncated: Bool) {
+        self.text = text
+        self.truncated = truncated || text.hasSuffix("…") || text.hasSuffix("...")
+    }
+}
 
 public struct TrackMatch: Sendable {
     public let track: Track
@@ -28,10 +41,18 @@ public final class TrackMatcher: @unchecked Sendable {
         let title: [String]
         let artist: [String]
         let all: [String]
+        let allSet: Set<String>
+    }
+
+    private struct RowToken {
+        let text: String
+        /// Ultima parola di una cella troncata: può essere l'inizio di una parola più lunga.
+        let clipped: Bool
     }
 
     private let entries: [Entry]
     private let postings: [String: [Int]]
+    private let candidateLimit = 60
 
     public var trackCount: Int { entries.count }
 
@@ -51,35 +72,49 @@ public final class TrackMatcher: @unchecked Sendable {
             if let length = track.lengthMs {
                 extra += Self.tokens(String(format: "%d:%02d", length / 60000, length / 1000 % 60))
             }
+            if let path = track.path {
+                extra += Self.tokens(path)
+            }
 
             let index = entries.count
             for token in Set(title + artist) { postings[token, default: []].append(index) }
-            entries.append(Entry(track: track, title: title, artist: artist, all: Array(Set(title + artist + extra))))
+            let allSet = Set(title + artist + extra)
+            entries.append(Entry(track: track, title: title, artist: artist, all: Array(allSet), allSet: allSet))
         }
 
         self.entries = entries
         self.postings = postings
     }
 
-    /// Le migliori tracce per i pezzi di testo di una riga, in ordine di punteggio decrescente.
-    public func match(_ cells: [String], limit: Int = 3) -> [TrackMatch] {
-        let text = cells.joined(separator: " ")
-        let truncated = text.contains("…") || text.contains("...")
-        let rowTokens = Self.tokens(text)
-        guard !rowTokens.isEmpty else { return [] }
+    /// Variante per testi senza posizione: una cella è troncata solo se termina con "…".
+    public func match(_ texts: [String], limit: Int = 3) -> [TrackMatch] {
+        match(texts.map { RowCell(text: $0, truncated: false) }, limit: limit)
+    }
+
+    /// Le migliori tracce per le celle di una riga, in ordine di punteggio decrescente.
+    public func match(_ cells: [RowCell], limit: Int = 3) -> [TrackMatch] {
+        var row: [RowToken] = []
+        for cell in cells {
+            let tokens = Self.tokens(cell.text)
+            for (index, token) in tokens.enumerated() {
+                row.append(RowToken(text: token, clipped: cell.truncated && index == tokens.count - 1))
+            }
+        }
+        guard !row.isEmpty else { return [] }
+        let rowSet = Set(row.map(\.text))
 
         // Candidati: tracce che condividono almeno una parola esatta, pesata per rarità.
         var weights: [Int: Double] = [:]
         let total = Double(max(entries.count, 1))
-        for token in Set(rowTokens) {
+        for token in rowSet {
             guard let list = postings[token] else { continue }
             let weight = log(total / Double(list.count)) + 0.1
             for index in list { weights[index, default: 0] += weight }
         }
-        let candidates = weights.sorted { $0.value > $1.value }.prefix(150).map(\.key)
+        let candidates = weights.sorted { $0.value > $1.value }.prefix(candidateLimit).map(\.key)
 
         return candidates
-            .map { score(entries[$0], rowTokens: rowTokens, truncated: truncated) }
+            .map { score(entries[$0], row: row, rowSet: rowSet) }
             .sorted { lhs, rhs in
                 if abs(lhs.score - rhs.score) > 1e-9 { return lhs.score > rhs.score }
                 return lhs.track.path != nil && rhs.track.path == nil
@@ -90,15 +125,15 @@ public final class TrackMatcher: @unchecked Sendable {
 
     // MARK: - Punteggio
 
-    private func score(_ entry: Entry, rowTokens: [String], truncated: Bool) -> TrackMatch {
-        let titleRecall = Self.recall(entry.title, in: rowTokens, truncated: truncated) ?? 0
-        let artistRecall = Self.recall(entry.artist, in: rowTokens, truncated: truncated)
+    private func score(_ entry: Entry, row: [RowToken], rowSet: Set<String>) -> TrackMatch {
+        let titleRecall = Self.recall(entry.title, in: row, rowSet: rowSet) ?? 0
+        let artistRecall = Self.recall(entry.artist, in: row, rowSet: rowSet)
         let recall = artistRecall.map { 0.65 * titleRecall + 0.35 * $0 } ?? titleRecall
 
-        let explained = rowTokens.filter { row in
-            entry.all.contains { Self.same($0, row, allowPrefix: truncated) }
+        let explained = row.filter { token in
+            entry.allSet.contains(token.text) || entry.all.contains { Self.similar($0, token) }
         }.count
-        let precision = Double(explained) / Double(rowTokens.count)
+        let precision = Double(explained) / Double(row.count)
 
         return TrackMatch(
             track: entry.track,
@@ -109,40 +144,52 @@ public final class TrackMatcher: @unchecked Sendable {
         )
     }
 
-    private static func recall(_ field: [String], in row: [String], truncated: Bool) -> Double? {
+    /// Frazione delle parole del campo presenti nella riga. Se l'ultima parola trovata corrisponde
+    /// al punto in cui una cella è stata tagliata, le parole successive del campo non contano.
+    private static func recall(_ field: [String], in row: [RowToken], rowSet: Set<String>) -> Double? {
         guard !field.isEmpty else { return nil }
-        let matched = field.map { token in row.contains { same(token, $0, allowPrefix: truncated) } }
-        var considered = matched.count
-        if truncated {
-            let lastMatched = matched.lastIndex(of: true).map { $0 + 1 } ?? 0
-            let minimum = Int((Double(matched.count) / 2).rounded(.up))
-            considered = max(lastMatched, minimum)
+        var matched = 0
+        var lastMatched = -1
+        var lastIsClipped = false
+        for (index, token) in field.enumerated() {
+            let exact = rowSet.contains(token)
+            let hits = row.filter { $0.text == token || (!exact && similar(token, $0)) }
+            guard !hits.isEmpty else { continue }
+            matched += 1
+            lastMatched = index
+            lastIsClipped = hits.contains(where: \.clipped)
         }
-        return Double(matched.prefix(considered).filter { $0 }.count) / Double(considered)
+        let considered = lastIsClipped ? lastMatched + 1 : field.count
+        return Double(matched) / Double(considered)
     }
 
-    /// `token` viene dalla libreria, `row` dall'OCR.
-    private static func same(_ token: String, _ row: String, allowPrefix: Bool) -> Bool {
-        if token == row { return true }
-        if allowPrefix && row.count >= 3 && token.hasPrefix(row) { return true }
-        let longest = max(token.count, row.count)
+    /// Confronto non esatto: `token` viene dalla libreria, `row` dall'OCR.
+    private static func similar(_ token: String, _ row: RowToken) -> Bool {
+        if row.clipped && token.hasPrefix(row.text) { return true }
+        let tokenLength = token.utf8.count
+        let rowLength = row.text.utf8.count
+        let longest = max(tokenLength, rowLength)
         guard longest >= 4 else { return false }
         let allowed = longest >= 8 ? 2 : 1
-        guard abs(token.count - row.count) <= allowed else { return false }
-        return levenshtein(Array(token.unicodeScalars), Array(row.unicodeScalars)) <= allowed
+        guard abs(tokenLength - rowLength) <= allowed else { return false }
+        return levenshtein(Array(token.utf8), Array(row.text.utf8), limit: allowed) <= allowed
     }
 
-    private static func levenshtein(_ a: [Unicode.Scalar], _ b: [Unicode.Scalar]) -> Int {
+    /// Distanza di modifica, con uscita anticipata appena supera `limit`.
+    private static func levenshtein(_ a: [UInt8], _ b: [UInt8], limit: Int) -> Int {
         if a.isEmpty { return b.count }
         if b.isEmpty { return a.count }
         var previous = Array(0...b.count)
         var current = [Int](repeating: 0, count: b.count + 1)
         for i in 1...a.count {
             current[0] = i
+            var rowMinimum = i
             for j in 1...b.count {
                 let cost = a[i - 1] == b[j - 1] ? 0 : 1
                 current[j] = min(previous[j] + 1, current[j - 1] + 1, previous[j - 1] + cost)
+                rowMinimum = min(rowMinimum, current[j])
             }
+            if rowMinimum > limit { return rowMinimum }
             swap(&previous, &current)
         }
         return previous[b.count]

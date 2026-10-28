@@ -20,29 +20,42 @@ public struct PreviewSettings: Codable, Equatable {
 
     /// Altezza di una riga del browser, in punti.
     public var rowHeight: Double
-    /// Quante righe catturare attorno al clic: un po' di contesto aiuta l'OCR.
+    /// Altezza della fascia catturata attorno al clic, in righe. Con 2 la riga cliccata
+    /// è sempre intera, ovunque cada il clic al suo interno.
     public var captureRows: Double
     /// Area della lista tracce dentro la finestra di Serato, come distanza dai bordi in punti.
     /// I clic fuori da quest'area passano a Serato senza essere toccati.
     public var browserInsets: Insets
+    /// Un testo che finisce a meno di questa distanza (in punti) dal testo successivo o dal bordo
+    /// destro è considerato tagliato da Serato.
+    public var truncationGap: Double
     /// Sotto questo punteggio la traccia non viene considerata riconosciuta.
     public var minimumScore: Double
+    /// OCR veloce invece che accurato.
+    public var fastOCR: Bool
     /// Lingue per l'OCR, in ordine di priorità.
     public var ocrLanguages: [String]
 
+    // Valori misurati con `click-identify --calibrate` su Serato DJ Pro 5.0, finestra 1680×1013.
     public static let defaults = PreviewSettings(
-        rowHeight: 18,
-        captureRows: 3,
-        browserInsets: Insets(left: 0, top: 0, right: 0, bottom: 0),
+        rowHeight: 29.5,
+        captureRows: 2,
+        browserInsets: Insets(left: 285, top: 478, right: 0, bottom: 25),
+        truncationGap: 14,
         minimumScore: 0.6,
+        // Su Intel l'OCR accurato impiega 1-1,5 s per riga, quello veloce circa 20 ms.
+        fastOCR: true,
         ocrLanguages: ["it-IT", "en-US"]
     )
 
-    public init(rowHeight: Double, captureRows: Double, browserInsets: Insets, minimumScore: Double, ocrLanguages: [String]) {
+    public init(rowHeight: Double, captureRows: Double, browserInsets: Insets, truncationGap: Double,
+                minimumScore: Double, fastOCR: Bool, ocrLanguages: [String]) {
         self.rowHeight = rowHeight
         self.captureRows = captureRows
         self.browserInsets = browserInsets
+        self.truncationGap = truncationGap
         self.minimumScore = minimumScore
+        self.fastOCR = fastOCR
         self.ocrLanguages = ocrLanguages
     }
 
@@ -53,7 +66,9 @@ public struct PreviewSettings: Codable, Equatable {
         rowHeight = try container.decodeIfPresent(Double.self, forKey: .rowHeight) ?? defaults.rowHeight
         captureRows = try container.decodeIfPresent(Double.self, forKey: .captureRows) ?? defaults.captureRows
         browserInsets = try container.decodeIfPresent(Insets.self, forKey: .browserInsets) ?? defaults.browserInsets
+        truncationGap = try container.decodeIfPresent(Double.self, forKey: .truncationGap) ?? defaults.truncationGap
         minimumScore = try container.decodeIfPresent(Double.self, forKey: .minimumScore) ?? defaults.minimumScore
+        fastOCR = try container.decodeIfPresent(Bool.self, forKey: .fastOCR) ?? defaults.fastOCR
         ocrLanguages = try container.decodeIfPresent([String].self, forKey: .ocrLanguages) ?? defaults.ocrLanguages
     }
 

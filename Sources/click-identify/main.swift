@@ -47,14 +47,14 @@ guard CGPreflightScreenCaptureAccess() else {
     """)
 }
 
-// MARK: - Impostazioni e indice
+// MARK: - Impostazioni, indice e OCR
 
 let settings: PreviewSettings
 do { settings = try PreviewSettings.load() } catch { fail("Impostazioni non valide in \(PreviewSettings.fileURL.path): \(error)") }
 print("Impostazioni: \(PreviewSettings.fileURL.path)")
 print("  altezza riga \(settings.rowHeight) pt, righe catturate \(settings.captureRows), margini browser "
       + "\(settings.browserInsets.left)/\(settings.browserInsets.top)/\(settings.browserInsets.right)/\(settings.browserInsets.bottom), "
-      + "punteggio minimo \(settings.minimumScore)")
+      + "taglio \(settings.truncationGap) pt, punteggio minimo \(settings.minimumScore), OCR \(settings.fastOCR ? "veloce" : "accurato")")
 
 let loadStart = Date()
 let matcher: TrackMatcher
@@ -65,6 +65,10 @@ do {
     fail("Libreria di Serato non leggibile: \(error)")
 }
 print("Indice: \(matcher.trackCount) tracce in \(milliseconds(loadStart))")
+
+let warmUpStart = Date()
+TextRecognizer.warmUp(languages: settings.ocrLanguages, fast: settings.fastOCR)
+print("OCR pronto in \(milliseconds(warmUpStart))")
 
 let capture = WindowCapture()
 
@@ -85,7 +89,7 @@ func identify(_ click: SeratoClick) async {
     var log = ["[\(timestamp())] ⌥+clic (\(Int(click.location.x)), \(Int(click.location.y)))"]
     defer { print(log.joined(separator: "\n") + "\n") }
 
-    // Banda di `captureRows` righe centrata sul clic, larga quanto l'area del browser.
+    // Fascia di `captureRows` righe centrata sul clic, larga quanto l'area del browser.
     let browser = settings.browserRect(in: click.windowFrame)
     let height = settings.rowHeight * settings.captureRows
     let band = CGRect(x: browser.minX, y: click.location.y - height / 2, width: browser.width, height: height)
@@ -110,18 +114,19 @@ func identify(_ click: SeratoClick) async {
     let ocrStart = Date()
     let texts: [RecognizedText]
     do {
-        texts = try TextRecognizer.recognize(image, pointSize: band.size, languages: settings.ocrLanguages)
+        texts = try TextRecognizer.recognize(image, pointSize: band.size, languages: settings.ocrLanguages, fast: settings.fastOCR)
     } catch {
         log.append("  OCR fallito: \(error)")
         return
     }
     let line = TextRecognizer.line(in: texts, nearY: click.location.y - band.minY, tolerance: settings.rowHeight * 0.4)
+    let cells = TextRecognizer.cells(line, rightEdge: band.width, truncationGap: settings.truncationGap)
     log.append("  OCR (cattura \(captureTime), testo \(milliseconds(ocrStart))): "
-               + (line.isEmpty ? "nessun testo" : line.map { "\"\($0.text)\"" }.joined(separator: " | ")))
-    guard !line.isEmpty else { return }
+               + (cells.isEmpty ? "nessun testo" : cells.map { "\"\($0.text)\"" + ($0.truncated ? "✂" : "") }.joined(separator: " | ")))
+    guard !cells.isEmpty else { return }
 
     let matchStart = Date()
-    let matches = matcher.match(line.map(\.text))
+    let matches = matcher.match(cells)
     let matchTime = milliseconds(matchStart)
 
     guard let best = matches.first, best.score >= settings.minimumScore else {
@@ -166,7 +171,7 @@ func calibrate(_ click: SeratoClick) async {
         log.append("  immagine: \(url.path) (\(image.width)×\(image.height) px)")
 
         let ocrStart = Date()
-        let texts = try TextRecognizer.recognize(image, pointSize: frame.size, languages: settings.ocrLanguages)
+        let texts = try TextRecognizer.recognize(image, pointSize: frame.size, languages: settings.ocrLanguages, fast: settings.fastOCR)
         log.append("  testi riconosciuti: \(texts.count) in \(milliseconds(ocrStart)) (x, y, larghezza, altezza in punti)")
         for text in texts.sorted(by: { ($0.frame.minY, $0.frame.minX) < ($1.frame.minY, $1.frame.minX) }) {
             let f = text.frame
