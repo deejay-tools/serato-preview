@@ -46,6 +46,47 @@ public struct PreviewSettings: Codable, Equatable {
         }
     }
 
+    /// Un tasto del controller: Note On o Control Change con valore maggiore di zero.
+    public struct MIDIControl: Codable, Equatable {
+        public var kind: MIDIMessage.Kind
+        /// 1-16.
+        public var channel: Int
+        public var number: Int
+
+        public init(kind: MIDIMessage.Kind = .note, channel: Int, number: Int) {
+            self.kind = kind
+            self.channel = channel
+            self.number = number
+        }
+
+        // Senza "kind" nel file vale come nota.
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            kind = try container.decodeIfPresent(MIDIMessage.Kind.self, forKey: .kind) ?? .note
+            channel = try container.decode(Int.self, forKey: .channel)
+            number = try container.decode(Int.self, forKey: .number)
+        }
+
+        /// Il tasto è stato premuto (il rilascio non conta).
+        public func isPressed(by message: MIDIMessage) -> Bool {
+            message.kind == kind && message.channel == channel && message.number == number && message.value > 0
+        }
+    }
+
+    /// Tasti del controller per l'anteprima; nil = non assegnato.
+    public struct MIDIMapping: Codable, Equatable {
+        /// Ascolta la traccia selezionata in Serato, o ferma l'anteprima in corso.
+        public var playStop: MIDIControl?
+        public var back: MIDIControl?
+        public var forward: MIDIControl?
+
+        public init(playStop: MIDIControl?, back: MIDIControl?, forward: MIDIControl?) {
+            self.playStop = playStop
+            self.back = back
+            self.forward = forward
+        }
+    }
+
     /// Lingua dell'interfaccia.
     public enum Language: String, Codable, CaseIterable, Identifiable {
         case system
@@ -69,6 +110,7 @@ public struct PreviewSettings: Codable, Equatable {
     // MARK: Attivazione
 
     public var modifier: Modifier
+    public var midi: MIDIMapping
 
     // MARK: Audio
 
@@ -105,18 +147,23 @@ public struct PreviewSettings: Codable, Equatable {
     /// Lingue per l'OCR, in ordine di priorità.
     public var ocrLanguages: [String]
 
-    // Geometria misurata con `click-identify --calibrate` su Serato DJ Pro 5.0, finestra 1680×1013.
+    // Geometria misurata su Serato DJ Pro 5.0 con la finestra a 1440×863 (MacBook Pro M1).
     public static let defaults = PreviewSettings(
         language: .system,
         modifier: .option,
+        // Pioneer DDJ-FLX10, canale 2: SHIFT+LINK e SHIFT+frecce MIX POINT SELECT. Senza SHIFT
+        // quei tasti hanno funzioni fisse in Serato (Link, intonazione) che MIDI Learn non toglie.
+        midi: MIDIMapping(playStop: MIDIControl(channel: 2, number: 67),
+                          back: MIDIControl(channel: 2, number: 73),
+                          forward: MIDIControl(channel: 2, number: 66)),
         outputDeviceUID: nil,
         outputChannels: [1, 2],
         startFraction: 0.3,
         volume: 0.8,
         seekStep: 5,
-        rowHeight: 29.5,
+        rowHeight: 28,
         captureRows: 2,
-        browserInsets: Insets(left: 285, top: 478, right: 0, bottom: 25),
+        browserInsets: Insets(left: 306, top: 398, right: 0, bottom: 42),
         truncationGap: 14,
         minimumScore: 0.6,
         // Su Intel l'OCR accurato impiega 1-1,5 s per riga, quello veloce circa 20 ms.
@@ -124,11 +171,12 @@ public struct PreviewSettings: Codable, Equatable {
         ocrLanguages: ["it-IT", "en-US"]
     )
 
-    public init(language: Language, modifier: Modifier, outputDeviceUID: String?, outputChannels: [Int], startFraction: Double,
+    public init(language: Language, modifier: Modifier, midi: MIDIMapping, outputDeviceUID: String?, outputChannels: [Int], startFraction: Double,
                 volume: Double, seekStep: Double, rowHeight: Double, captureRows: Double, browserInsets: Insets,
                 truncationGap: Double, minimumScore: Double, fastOCR: Bool, ocrLanguages: [String]) {
         self.language = language
         self.modifier = modifier
+        self.midi = midi
         self.outputDeviceUID = outputDeviceUID
         self.outputChannels = outputChannels
         self.startFraction = startFraction
@@ -152,6 +200,7 @@ public struct PreviewSettings: Codable, Equatable {
         }
         language = value(.language, defaults.language)
         modifier = value(.modifier, defaults.modifier)
+        midi = value(.midi, defaults.midi)
         outputDeviceUID = value(.outputDeviceUID, defaults.outputDeviceUID)
         outputChannels = value(.outputChannels, defaults.outputChannels)
         startFraction = value(.startFraction, defaults.startFraction)

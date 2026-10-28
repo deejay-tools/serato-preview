@@ -10,10 +10,17 @@ public struct SeratoClick: Sendable {
     public let time: Date
 }
 
+/// La finestra principale di Serato, per il tasto che ascolta la riga selezionata.
+public struct SeratoWindow: Sendable {
+    public let id: CGWindowID
+    /// Coordinate globali in punti, origine in alto a sinistra.
+    public let frame: CGRect
+}
+
 /// Un tasto premuto, anche per ripetizione automatica.
 public struct KeyPress {
     public enum Key {
-        case escape
+        case up
         case left
         case right
     }
@@ -26,7 +33,9 @@ public struct KeyPress {
 /// Event tap globale. Richiede il permesso Accessibilità.
 /// - Clic sinistro con il modificatore su una finestra normale di Serato: se `accepts` lo approva
 ///   viene consumato, insieme ai trascinamenti e al rilascio che lo seguono, e passato a `onClick`.
-/// - Esc, ← e → vengono offerti a `onKey`, che decide se consumarli.
+/// - ↓ con il modificatore, quando Serato è in primo piano: viene consumato e passato a `onSelectedRow`
+///   con la finestra principale di Serato.
+/// - ↑, ← e → vengono offerti a `onKey`, che decide se consumarli.
 /// Ogni altro evento arriva a destinazione invariato. Le callback girano sul main thread.
 public final class EventInterceptor {
     public enum StartError: Error, CustomStringConvertible {
@@ -43,6 +52,7 @@ public final class EventInterceptor {
     public var onClick: (SeratoClick) -> Void
     /// Tasto premuto: restituire true per consumarlo.
     public var onKey: (KeyPress) -> Bool = { _ in false }
+    public var onSelectedRow: (SeratoWindow) -> Void = { _ in }
 
     public var isRunning: Bool { tap != nil }
 
@@ -52,7 +62,8 @@ public final class EventInterceptor {
     private var swallowing = false
     private var serato: NSRunningApplication?
 
-    private static let keys: [Int64: KeyPress.Key] = [53: .escape, 123: .left, 124: .right]
+    private static let keys: [Int64: KeyPress.Key] = [126: .up, 123: .left, 124: .right]
+    private static let downKey: Int64 = 125
     private static let modifierMasks: [CGEventFlags] = [.maskAlternate, .maskCommand, .maskControl, .maskShift]
 
     public init(bundleID: String = "com.serato.seratodj",
@@ -121,6 +132,12 @@ public final class EventInterceptor {
             return nil
 
         case .keyDown:
+            if isEnabled, event.getIntegerValueField(.keyboardEventKeycode) == Self.downKey, hasOnlyModifier(event.flags),
+               let pid = seratoPID(), NSWorkspace.shared.frontmostApplication?.processIdentifier == pid,
+               let window = Self.mainWindow(ownedBy: pid) {
+                onSelectedRow(window)
+                return nil
+            }
             guard isEnabled, let key = Self.keys[event.getIntegerValueField(.keyboardEventKeycode)] else { return pass }
             let isPlain = Self.modifierMasks.allSatisfy { !event.flags.contains($0) }
             return onKey(KeyPress(key: key, isPlain: isPlain)) ? nil : pass
@@ -128,6 +145,11 @@ public final class EventInterceptor {
         default:
             return pass
         }
+    }
+
+    /// La finestra principale di Serato, se è aperto. Per i comandi che non arrivano dalla tastiera.
+    public func seratoMainWindow() -> SeratoWindow? {
+        seratoPID().flatMap(Self.mainWindow(ownedBy:))
     }
 
     private func hasOnlyModifier(_ flags: CGEventFlags) -> Bool {
@@ -160,6 +182,22 @@ public final class EventInterceptor {
             return (id, bounds)
         }
         return nil
+    }
+}
+
+extension EventInterceptor {
+    /// La finestra normale (livello 0) più grande di `pid` sullo schermo.
+    static func mainWindow(ownedBy pid: pid_t) -> SeratoWindow? {
+        guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return nil }
+        return list.compactMap { info -> SeratoWindow? in
+            guard info[kCGWindowOwnerPID as String] as? pid_t == pid,
+                  info[kCGWindowLayer as String] as? Int ?? 0 == 0,
+                  let id = info[kCGWindowNumber as String] as? CGWindowID,
+                  let boundsInfo = info[kCGWindowBounds as String] as? NSDictionary,
+                  let bounds = CGRect(dictionaryRepresentation: boundsInfo) else { return nil }
+            return SeratoWindow(id: id, frame: bounds)
+        }.max { $0.frame.width * $0.frame.height < $1.frame.width * $1.frame.height }
     }
 }
 

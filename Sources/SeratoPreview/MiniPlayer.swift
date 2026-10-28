@@ -73,7 +73,7 @@ struct MiniPlayerView: View {
                         Image(systemName: "stop.fill")
                     }
                     .buttonStyle(.borderless)
-                    .help(tr("Ferma (Esc)", "Stop (Esc)"))
+                    .help(tr("Ferma (↑)", "Stop (↑)"))
                 }
             }
 
@@ -89,7 +89,7 @@ struct MiniPlayerView: View {
                 HStack {
                     Text(Self.format(controller.position))
                     Spacer()
-                    Text(tr("← → sposta · Esc ferma", "← → seek · Esc stops"))
+                    Text(tr("← → sposta · ↑ ferma", "← → seek · ↑ stops"))
                     Spacer()
                     Text("-" + Self.format(controller.duration - controller.position))
                 }

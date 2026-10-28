@@ -49,7 +49,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         let symbol = controller.settings.modifier.symbol
-        let enabled = item(tr("Attivo (\(symbol)+clic)", "Enabled (\(symbol)+click)"), #selector(toggleEnabled))
+        let enabled = item(tr("Attivo (\(symbol)+clic, \(symbol)+↓)", "Enabled (\(symbol)+click, \(symbol)+↓)"), #selector(toggleEnabled))
         enabled.state = controller.isEnabled ? .on : .off
         menu.addItem(enabled)
         let stop = item(tr("Ferma anteprima", "Stop preview"), #selector(stopPreview))

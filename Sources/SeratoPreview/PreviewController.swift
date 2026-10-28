@@ -60,6 +60,7 @@ final class PreviewController: ObservableObject {
     private let identifier = RowIdentifier()
     private let player = PreviewPlayer()
     private let interceptor = EventInterceptor()
+    private let midiInput = MIDIInput()
     private var matcher: TrackMatcher?
     private var libraryStamp: [String] = []
     private var loadingLibrary = false
@@ -118,6 +119,15 @@ final class PreviewController: ObservableObject {
             MainActor.assumeIsolated { self?.playbackEnded() }
         }
 
+        midiInput.onMessage = { [weak self] message in
+            MainActor.assumeIsolated { self?.handle(message) }
+        }
+        do {
+            try midiInput.start()
+        } catch {
+            log.error("MIDI non disponibile: \(String(describing: error), privacy: .public)")
+        }
+
         let promptKey = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String
         _ = AXIsProcessTrustedWithOptions([promptKey: true] as CFDictionary)
         if !CGPreflightScreenCaptureAccess() { CGRequestScreenCaptureAccess() }
@@ -149,6 +159,9 @@ final class PreviewController: ObservableObject {
         }
         interceptor.onKey = { [weak self] key in
             MainActor.assumeIsolated { self?.handle(key) ?? false }
+        }
+        interceptor.onSelectedRow = { [weak self] window in
+            MainActor.assumeIsolated { self?.previewSelectedRow(in: window) }
         }
     }
 
@@ -218,9 +231,27 @@ final class PreviewController: ObservableObject {
         }
     }
 
-    // MARK: - Clic
+    // MARK: - Clic e riga selezionata
 
     private func handle(_ click: SeratoClick) {
+        identifyAndPlay { identifier, settings, matcher in
+            try await identifier.identify(click, settings: settings, matcher: matcher)
+        }
+    }
+
+    private func previewSelectedRow(in window: SeratoWindow) {
+        let debugImage = Self.logsFolder.appendingPathComponent("ultima-selezione.png")
+        identifyAndPlay { identifier, settings, matcher in
+            try await identifier.identifySelected(in: window, settings: settings, matcher: matcher, debugImage: debugImage)
+        }
+    }
+
+    private static let logsFolder = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Library/Logs/SeratoPreview")
+
+    private func identifyAndPlay(
+        _ identify: @escaping (RowIdentifier, PreviewSettings, TrackMatcher) async throws -> Identification
+    ) {
         guard let matcher else {
             showMessage(tr("Libreria in caricamento", "Library loading"),
                         tr("Riprova tra qualche secondo", "Try again in a few seconds"), symbol: "hourglass")
@@ -233,7 +264,7 @@ final class PreviewController: ObservableObject {
 
         Task {
             do {
-                let result = try await identifier.identify(click, settings: settings, matcher: matcher)
+                let result = try await identify(identifier, settings, matcher)
                 guard generation == clickGeneration else { return }
                 logIdentification(result)
                 apply(result)
@@ -241,7 +272,12 @@ final class PreviewController: ObservableObject {
                 guard generation == clickGeneration else { return }
                 log.error("Cattura non riuscita: \(String(describing: error), privacy: .public)")
                 let nsError = error as NSError
-                if nsError.domain == SCStreamErrorDomain, nsError.code == SCStreamError.Code.userDeclined.rawValue {
+                if case RowIdentifier.SelectionError.notFound = error {
+                    showMessage(tr("Nessuna riga selezionata", "No selected row"),
+                                tr("Seleziona una traccia visibile nel browser di Serato",
+                                   "Select a visible track in the Serato browser"),
+                                symbol: "list.bullet.rectangle")
+                } else if nsError.domain == SCStreamErrorDomain, nsError.code == SCStreamError.Code.userDeclined.rawValue {
                     showMessage(tr("Manca il permesso Registrazione schermo", "Screen Recording permission missing"),
                                 tr("Concedilo in Impostazioni di Sistema, poi esci e riapri l'app",
                                    "Grant it in System Settings, then quit and reopen the app"),
@@ -318,11 +354,11 @@ final class PreviewController: ObservableObject {
 
     // MARK: - Tastiera
 
-    /// Solo durante l'anteprima e senza modificatori: Esc ferma, ← → spostano. Altrimenti il tasto va a Serato.
+    /// Solo durante l'anteprima e senza modificatori: ↑ ferma, ← → spostano. Altrimenti il tasto va a Serato.
     private func handle(_ press: KeyPress) -> Bool {
         guard player.isPlaying, press.isPlain else { return false }
         switch press.key {
-        case .escape:
+        case .up:
             stopPreview()
         case .left:
             player.seek(by: -settings.seekStep)
@@ -332,6 +368,32 @@ final class PreviewController: ObservableObject {
             position = player.position
         }
         return true
+    }
+
+    // MARK: - MIDI
+
+    /// Il tasto play/stop ascolta la traccia selezionata in Serato o ferma quella in corso;
+    /// indietro e avanti agiscono solo durante l'anteprima. Serato riceve comunque gli stessi messaggi.
+    private func handle(_ message: MIDIMessage) {
+        guard isEnabled else { return }
+        let midi = settings.midi
+        if midi.playStop?.isPressed(by: message) == true {
+            if player.isPlaying {
+                stopPreview()
+            } else if let window = interceptor.seratoMainWindow() {
+                previewSelectedRow(in: window)
+            } else {
+                showMessage(tr("Serato non è aperto", "Serato is not open"),
+                            tr("Apri Serato DJ Pro e seleziona una traccia", "Open Serato DJ Pro and select a track"),
+                            symbol: "exclamationmark.triangle")
+            }
+        } else if player.isPlaying, midi.back?.isPressed(by: message) == true {
+            player.seek(by: -settings.seekStep)
+            position = player.position
+        } else if player.isPlaying, midi.forward?.isPressed(by: message) == true {
+            player.seek(by: settings.seekStep)
+            position = player.position
+        }
     }
 
     // MARK: - Stato
