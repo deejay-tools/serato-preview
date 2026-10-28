@@ -46,6 +46,26 @@ public struct PreviewSettings: Codable, Equatable {
         }
     }
 
+    /// Lingua dell'interfaccia.
+    public enum Language: String, Codable, CaseIterable, Identifiable {
+        case system
+        case italian
+        case english
+
+        public var id: String { rawValue }
+
+        /// Lingua effettiva: con `system` l'italiano se è la prima lingua di macOS, altrimenti l'inglese.
+        public var resolved: Language {
+            guard self == .system else { return self }
+            let preferred = Locale.preferredLanguages.first ?? "en"
+            return preferred.hasPrefix("it") ? .italian : .english
+        }
+    }
+
+    // MARK: Interfaccia
+
+    public var language: Language
+
     // MARK: Attivazione
 
     public var modifier: Modifier
@@ -87,6 +107,7 @@ public struct PreviewSettings: Codable, Equatable {
 
     // Geometria misurata con `click-identify --calibrate` su Serato DJ Pro 5.0, finestra 1680×1013.
     public static let defaults = PreviewSettings(
+        language: .system,
         modifier: .option,
         outputDeviceUID: nil,
         outputChannels: [1, 2],
@@ -103,9 +124,10 @@ public struct PreviewSettings: Codable, Equatable {
         ocrLanguages: ["it-IT", "en-US"]
     )
 
-    public init(modifier: Modifier, outputDeviceUID: String?, outputChannels: [Int], startFraction: Double,
+    public init(language: Language, modifier: Modifier, outputDeviceUID: String?, outputChannels: [Int], startFraction: Double,
                 volume: Double, seekStep: Double, rowHeight: Double, captureRows: Double, browserInsets: Insets,
                 truncationGap: Double, minimumScore: Double, fastOCR: Bool, ocrLanguages: [String]) {
+        self.language = language
         self.modifier = modifier
         self.outputDeviceUID = outputDeviceUID
         self.outputChannels = outputChannels
@@ -128,6 +150,7 @@ public struct PreviewSettings: Codable, Equatable {
         func value<T: Decodable>(_ key: CodingKeys, _ fallback: T) -> T {
             ((try? container.decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback
         }
+        language = value(.language, defaults.language)
         modifier = value(.modifier, defaults.modifier)
         outputDeviceUID = value(.outputDeviceUID, defaults.outputDeviceUID)
         outputChannels = value(.outputChannels, defaults.outputChannels)

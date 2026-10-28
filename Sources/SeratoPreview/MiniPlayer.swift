@@ -73,7 +73,7 @@ struct MiniPlayerView: View {
                         Image(systemName: "stop.fill")
                     }
                     .buttonStyle(.borderless)
-                    .help("Ferma (Esc)")
+                    .help(tr("Ferma (Esc)", "Stop (Esc)"))
                 }
             }
 
@@ -89,7 +89,7 @@ struct MiniPlayerView: View {
                 HStack {
                     Text(Self.format(controller.position))
                     Spacer()
-                    Text("← → sposta · Esc ferma")
+                    Text(tr("← → sposta · Esc ferma", "← → seek · Esc stops"))
                     Spacer()
                     Text("-" + Self.format(controller.duration - controller.position))
                 }
@@ -113,7 +113,7 @@ struct MiniPlayerView: View {
     private var title: String {
         switch controller.status {
         case .idle: return ""
-        case .identifying: return "Riconosco la traccia…"
+        case .identifying: return tr("Riconosco la traccia…", "Recognizing the track…")
         case .playing(let title, _), .message(let title, _, _): return title
         }
     }

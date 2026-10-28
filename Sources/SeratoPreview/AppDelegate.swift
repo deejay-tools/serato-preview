@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import SeratoPreviewCore
 
@@ -9,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var miniPlayer: MiniPlayerPanel!
     private var settingsWindow: NSWindow?
+    private var settingsCancellable: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
@@ -18,6 +20,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusItem.menu = menu
 
         miniPlayer = MiniPlayerPanel(controller: controller)
+        // Il titolo della finestra segue la lingua quando si salvano le impostazioni.
+        settingsCancellable = controller.$settings.sink { [weak self] _ in
+            self?.settingsWindow?.title = Self.settingsWindowTitle
+        }
         controller.start()
     }
 
@@ -29,36 +35,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(disabledItem(statusLine))
         menu.addItem(disabledItem(controller.libraryDescription))
         if !controller.missingPermissions.isEmpty {
-            menu.addItem(disabledItem("Permessi mancanti: " + controller.missingPermissions.joined(separator: ", ")))
-            if controller.missingPermissions.contains("Accessibilità") {
-                menu.addItem(item("Apri impostazioni Accessibilità…", #selector(openAccessibilitySettings)))
+            let names = controller.missingPermissions.map(\.name).joined(separator: ", ")
+            menu.addItem(disabledItem(tr("Permessi mancanti: ", "Missing permissions: ") + names))
+            if controller.missingPermissions.contains(.accessibility) {
+                menu.addItem(item(tr("Apri impostazioni Accessibilità…", "Open Accessibility settings…"),
+                                  #selector(openAccessibilitySettings)))
             }
-            if controller.missingPermissions.contains("Registrazione schermo") {
-                menu.addItem(item("Apri impostazioni Registrazione schermo…", #selector(openScreenRecordingSettings)))
+            if controller.missingPermissions.contains(.screenRecording) {
+                menu.addItem(item(tr("Apri impostazioni Registrazione schermo…", "Open Screen Recording settings…"),
+                                  #selector(openScreenRecordingSettings)))
             }
         }
         menu.addItem(.separator())
 
-        let enabled = item("Attivo (\(controller.settings.modifier.symbol)+clic)", #selector(toggleEnabled))
+        let symbol = controller.settings.modifier.symbol
+        let enabled = item(tr("Attivo (\(symbol)+clic)", "Enabled (\(symbol)+click)"), #selector(toggleEnabled))
         enabled.state = controller.isEnabled ? .on : .off
         menu.addItem(enabled)
-        let stop = item("Ferma anteprima", #selector(stopPreview))
+        let stop = item(tr("Ferma anteprima", "Stop preview"), #selector(stopPreview))
         stop.isEnabled = controller.isPreviewing
         menu.addItem(stop)
         menu.addItem(.separator())
 
-        menu.addItem(item("Impostazioni…", #selector(openSettings), key: ","))
-        menu.addItem(item("Ricarica libreria", #selector(reloadLibrary)))
+        menu.addItem(item(tr("Impostazioni…", "Settings…"), #selector(openSettings), key: ","))
+        menu.addItem(item(tr("Ricarica libreria", "Reload library"), #selector(reloadLibrary)))
         menu.addItem(.separator())
-        menu.addItem(item("Esci da Serato Preview", #selector(quit), key: "q"))
+        menu.addItem(item(tr("Esci da Serato Preview", "Quit Serato Preview"), #selector(quit), key: "q"))
     }
 
     private var statusLine: String {
         switch controller.status {
-        case .playing(let title, _): return "In ascolto: \(title)"
-        case .identifying: return "Riconosco la traccia…"
-        default: return controller.isEnabled ? "Pronto" : "Disattivato"
+        case .playing(let title, _): return tr("In ascolto: ", "Playing: ") + title
+        case .identifying: return tr("Riconosco la traccia…", "Recognizing the track…")
+        default: return controller.isEnabled ? tr("Pronto", "Ready") : tr("Disattivato", "Disabled")
         }
+    }
+
+    private static var settingsWindowTitle: String {
+        tr("Impostazioni Serato Preview", "Serato Preview Settings")
     }
 
     private func item(_ title: String, _ action: Selector, key: String = "") -> NSMenuItem {
@@ -94,7 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             settingsWindow.contentViewController = hosting
         } else {
             let window = NSWindow(contentViewController: hosting)
-            window.title = "Impostazioni Serato Preview"
+            window.title = Self.settingsWindowTitle
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
             window.center()

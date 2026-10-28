@@ -16,13 +16,37 @@ final class PreviewController: ObservableObject {
         case message(title: String, subtitle: String, symbol: String)
     }
 
+    enum Permission {
+        case accessibility
+        case screenRecording
+
+        @MainActor var name: String {
+            switch self {
+            case .accessibility: return tr("Accessibilità", "Accessibility")
+            case .screenRecording: return tr("Registrazione schermo", "Screen Recording")
+            }
+        }
+    }
+
+    enum LibraryState {
+        case notLoaded
+        case loading
+        case loaded(trackCount: Int, at: Date)
+        case failed(Error)
+    }
+
+    enum SettingsError {
+        case invalidFile(Error)
+        case saveFailed(Error)
+    }
+
     @Published private(set) var status: Status = .idle
     @Published private(set) var position: TimeInterval = 0
     @Published private(set) var duration: TimeInterval = 0
-    @Published private(set) var libraryDescription = "Libreria non ancora caricata"
-    @Published private(set) var missingPermissions: [String] = []
+    @Published private(set) var library: LibraryState = .notLoaded
+    @Published private(set) var missingPermissions: [Permission] = []
     @Published private(set) var settings: PreviewSettings
-    @Published private(set) var settingsError: String?
+    @Published private(set) var settingsError: SettingsError?
     @Published var isEnabled = true {
         didSet {
             interceptor.isEnabled = isEnabled
@@ -54,7 +78,35 @@ final class PreviewController: ObservableObject {
             settings = try PreviewSettings.load()
         } catch {
             settings = .defaults
-            settingsError = "settings.json non valido, uso i valori predefiniti: \(error.localizedDescription)"
+            settingsError = .invalidFile(error)
+        }
+        L10n.language = settings.language.resolved
+    }
+
+    var libraryDescription: String {
+        switch library {
+        case .notLoaded:
+            return tr("Libreria non ancora caricata", "Library not loaded yet")
+        case .loading:
+            return tr("Caricamento libreria…", "Loading library…")
+        case .loaded(let count, let date):
+            let tracks = count.formatted(.number.locale(L10n.locale))
+            let time = date.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(L10n.locale))
+            return tr("\(tracks) tracce · aggiornata alle \(time)", "\(tracks) tracks · updated at \(time)")
+        case .failed(let error):
+            return tr("Libreria non leggibile: ", "Cannot read library: ") + localizedMessage(for: error)
+        }
+    }
+
+    var settingsErrorMessage: String? {
+        switch settingsError {
+        case nil:
+            return nil
+        case .invalidFile(let error):
+            return tr("settings.json non valido, uso i valori predefiniti: ",
+                      "Invalid settings.json, using default values: ") + error.localizedDescription
+        case .saveFailed(let error):
+            return tr("Impossibile salvare le impostazioni: ", "Cannot save the settings: ") + error.localizedDescription
         }
     }
 
@@ -101,9 +153,9 @@ final class PreviewController: ObservableObject {
     }
 
     private func checkPermissions() {
-        var missing: [String] = []
-        if !AXIsProcessTrusted() { missing.append("Accessibilità") }
-        if !CGPreflightScreenCaptureAccess() { missing.append("Registrazione schermo") }
+        var missing: [Permission] = []
+        if !AXIsProcessTrusted() { missing.append(.accessibility) }
+        if !CGPreflightScreenCaptureAccess() { missing.append(.screenRecording) }
         if missing != missingPermissions { missingPermissions = missing }
 
         if !interceptor.isRunning && AXIsProcessTrusted() {
@@ -125,7 +177,7 @@ final class PreviewController: ObservableObject {
     func reloadLibrary() {
         guard !loadingLibrary else { return }
         loadingLibrary = true
-        if matcher == nil { libraryDescription = "Caricamento libreria…" }
+        if matcher == nil { library = .loading }
         let stamp = Self.currentLibraryStamp()
 
         Task.detached(priority: .utility) {
@@ -140,11 +192,10 @@ final class PreviewController: ObservableObject {
                 case .success(let matcher):
                     self.matcher = matcher
                     self.libraryStamp = stamp
-                    let time = Date().formatted(date: .omitted, time: .shortened)
-                    self.libraryDescription = "\(matcher.trackCount.formatted()) tracce · aggiornata alle \(time)"
+                    self.library = .loaded(trackCount: matcher.trackCount, at: Date())
                     self.log.info("Libreria: \(matcher.trackCount) tracce in \(Int(elapsed * 1000)) ms")
                 case .failure(let error):
-                    self.libraryDescription = "Libreria non leggibile: \(error)"
+                    self.library = .failed(error)
                     self.log.error("Libreria non leggibile: \(String(describing: error), privacy: .public)")
                 }
             }
@@ -171,7 +222,8 @@ final class PreviewController: ObservableObject {
 
     private func handle(_ click: SeratoClick) {
         guard let matcher else {
-            showMessage("Libreria in caricamento", "Riprova tra qualche secondo", symbol: "hourglass")
+            showMessage(tr("Libreria in caricamento", "Library loading"),
+                        tr("Riprova tra qualche secondo", "Try again in a few seconds"), symbol: "hourglass")
             return
         }
         clickGeneration += 1
@@ -190,11 +242,13 @@ final class PreviewController: ObservableObject {
                 log.error("Cattura non riuscita: \(String(describing: error), privacy: .public)")
                 let nsError = error as NSError
                 if nsError.domain == SCStreamErrorDomain, nsError.code == SCStreamError.Code.userDeclined.rawValue {
-                    showMessage("Manca il permesso Registrazione schermo",
-                                "Concedilo in Impostazioni di Sistema, poi esci e riapri l'app",
+                    showMessage(tr("Manca il permesso Registrazione schermo", "Screen Recording permission missing"),
+                                tr("Concedilo in Impostazioni di Sistema, poi esci e riapri l'app",
+                                   "Grant it in System Settings, then quit and reopen the app"),
                                 symbol: "lock.shield")
                 } else {
-                    showMessage("Cattura non riuscita", "\(error)", symbol: "exclamationmark.triangle")
+                    showMessage(tr("Cattura non riuscita", "Capture failed"), localizedMessage(for: error),
+                                symbol: "exclamationmark.triangle")
                 }
             }
         }
@@ -202,7 +256,8 @@ final class PreviewController: ObservableObject {
 
     private func apply(_ result: Identification) {
         guard let best = result.best(minimumScore: settings.minimumScore) else {
-            showMessage("Traccia non riconosciuta", result.cells.isEmpty ? "Nessun testo sulla riga" : result.text,
+            showMessage(tr("Traccia non riconosciuta", "Track not recognized"),
+                        result.cells.isEmpty ? tr("Nessun testo sulla riga", "No text on the row") : result.text,
                         symbol: "questionmark.circle")
             return
         }
@@ -216,12 +271,12 @@ final class PreviewController: ObservableObject {
 
         switch track.source {
         case .streaming:
-            showMessage(track.title, "Streaming: anteprima non disponibile", symbol: "icloud.slash")
+            showMessage(track.title, tr("Streaming: anteprima non disponibile", "Streaming: preview not available"), symbol: "icloud.slash")
         case .unresolved:
-            showMessage(track.title, "Il disco di questa traccia non è collegato", symbol: "externaldrive.badge.xmark")
+            showMessage(track.title, tr("Il disco di questa traccia non è collegato", "The drive for this track is not connected"), symbol: "externaldrive.badge.xmark")
         case .file(let path):
             guard FileManager.default.fileExists(atPath: path) else {
-                showMessage(track.title, "File non trovato", symbol: "doc.questionmark")
+                showMessage(track.title, tr("File non trovato", "File not found"), symbol: "doc.questionmark")
                 return
             }
             play(track, url: URL(fileURLWithPath: path))
@@ -234,7 +289,7 @@ final class PreviewController: ObservableObject {
                             startFraction: settings.startFraction, volume: Float(settings.volume))
         } catch {
             log.error("Riproduzione non riuscita: \(String(describing: error), privacy: .public)")
-            showMessage("Anteprima non riuscita", "\(error)", symbol: "speaker.slash")
+            showMessage(tr("Anteprima non riuscita", "Preview failed"), localizedMessage(for: error), symbol: "speaker.slash")
             return
         }
         currentTrack = track
@@ -330,8 +385,10 @@ final class PreviewController: ObservableObject {
             try newSettings.save()
             settingsError = nil
         } catch {
-            settingsError = "Impossibile salvare le impostazioni: \(error.localizedDescription)"
+            settingsError = .saveFailed(error)
         }
+        // Prima di pubblicare le impostazioni, così chi si aggiorna le trova già nella nuova lingua.
+        L10n.language = newSettings.language.resolved
         settings = newSettings
         interceptor.modifier = newSettings.modifier.flags
         if audioChanged { stopPreview() }
