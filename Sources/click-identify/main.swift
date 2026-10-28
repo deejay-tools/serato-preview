@@ -1,5 +1,5 @@
 // click-identify — Fase 3: ⌥+clic su una riga del browser di Serato → log della traccia riconosciuta.
-// Il clic viene consumato e Serato non lo riceve; per ora nessun audio.
+// Il clic viene consumato e Serato non lo riceve; nessun audio.
 //
 // Uso (dal Terminale, con permessi Accessibilità e Registrazione schermo):
 //   swift run click-identify               log di ogni ⌥+clic
@@ -20,7 +20,7 @@ let imagesFolder = FileManager.default.homeDirectoryForCurrentUser.appendingPath
 
 setvbuf(stdout, nil, _IOLBF, 0)
 
-func milliseconds(_ start: Date) -> String { String(format: "%.0f ms", Date().timeIntervalSince(start) * 1000) }
+func milliseconds(_ interval: TimeInterval) -> String { String(format: "%.0f ms", interval * 1000) }
 
 func timestamp() -> String {
     let formatter = DateFormatter()
@@ -64,12 +64,13 @@ do {
 } catch {
     fail("Libreria di Serato non leggibile: \(error)")
 }
-print("Indice: \(matcher.trackCount) tracce in \(milliseconds(loadStart))")
+print("Indice: \(matcher.trackCount) tracce in \(milliseconds(Date().timeIntervalSince(loadStart)))")
 
 let warmUpStart = Date()
 TextRecognizer.warmUp(languages: settings.ocrLanguages, fast: settings.fastOCR)
-print("OCR pronto in \(milliseconds(warmUpStart))")
+print("OCR pronto in \(milliseconds(Date().timeIntervalSince(warmUpStart)))")
 
+let identifier = RowIdentifier()
 let capture = WindowCapture()
 
 // MARK: - Gestione del clic
@@ -89,60 +90,36 @@ func identify(_ click: SeratoClick) async {
     var log = ["[\(timestamp())] ⌥+clic (\(Int(click.location.x)), \(Int(click.location.y)))"]
     defer { print(log.joined(separator: "\n") + "\n") }
 
-    // Fascia di `captureRows` righe centrata sul clic, larga quanto l'area del browser.
-    let browser = settings.browserRect(in: click.windowFrame)
-    let height = settings.rowHeight * settings.captureRows
-    let band = CGRect(x: browser.minX, y: click.location.y - height / 2, width: browser.width, height: height)
-        .intersection(click.windowFrame)
-
-    let captureStart = Date()
-    let image: CGImage
+    let result: Identification
     do {
-        image = try await capture.capture(windowID: click.windowID, windowFrame: click.windowFrame, rect: band)
+        result = try await identifier.identify(click, settings: settings, matcher: matcher)
     } catch {
-        log.append("  cattura fallita: \(error)")
+        log.append("  riconoscimento fallito: \(error)")
         return
     }
-    let captureTime = milliseconds(captureStart)
 
     if saveImages {
         let url = imagesFolder.appendingPathComponent("riga-\(Int(click.time.timeIntervalSince1970 * 1000)).png")
-        try? ImageWriter.writePNG(image, to: url)
+        try? ImageWriter.writePNG(result.image, to: url)
         log.append("  immagine: \(url.path)")
     }
 
-    let ocrStart = Date()
-    let texts: [RecognizedText]
-    do {
-        texts = try TextRecognizer.recognize(image, pointSize: band.size, languages: settings.ocrLanguages, fast: settings.fastOCR)
-    } catch {
-        log.append("  OCR fallito: \(error)")
-        return
-    }
-    let line = TextRecognizer.line(in: texts, nearY: click.location.y - band.minY, tolerance: settings.rowHeight * 0.4)
-    let cells = TextRecognizer.cells(line, rightEdge: band.width, truncationGap: settings.truncationGap)
-    log.append("  OCR (cattura \(captureTime), testo \(milliseconds(ocrStart))): "
-               + (cells.isEmpty ? "nessun testo" : cells.map { "\"\($0.text)\"" + ($0.truncated ? "✂" : "") }.joined(separator: " | ")))
-    guard !cells.isEmpty else { return }
+    log.append("  OCR (cattura \(milliseconds(result.captureDuration)), testo \(milliseconds(result.ocrDuration))): "
+               + (result.cells.isEmpty ? "nessun testo" : result.cells.map { "\"\($0.text)\"" + ($0.truncated ? "✂" : "") }.joined(separator: " | ")))
+    guard !result.cells.isEmpty else { return }
 
-    let matchStart = Date()
-    let matches = matcher.match(cells)
-    let matchTime = milliseconds(matchStart)
-
-    guard let best = matches.first, best.score >= settings.minimumScore else {
+    let matchTime = milliseconds(result.matchDuration)
+    guard let best = result.best(minimumScore: settings.minimumScore) else {
         log.append("  → nessuna traccia sicura (abbinamento \(matchTime))")
-        matches.forEach { log.append(String(format: "     %.2f  %@", $0.score, describe($0.track))) }
+        result.matches.forEach { log.append(String(format: "     %.2f  %@", $0.score, describe($0.track))) }
         return
     }
 
     var verdict = String(format: "  → %@ punteggio %.2f", describe(best.track), best.score)
-    if matches.count > 1 {
-        let second = matches[1]
+    if result.matches.count > 1 {
+        let second = result.matches[1]
         verdict += String(format: " (seconda %.2f: %@)", second.score, describe(second.track))
-        // Lo stesso brano in due cartelle non è un'ambiguità: un file vale l'altro.
-        let sameSong = TrackMatcher.normalize(best.track.title + " " + best.track.artist)
-            == TrackMatcher.normalize(second.track.title + " " + second.track.artist)
-        if best.score - second.score < 0.05 && !sameSong { verdict += " AMBIGUO" }
+        if result.isAmbiguous { verdict += " AMBIGUO" }
     }
     log.append(verdict + " (abbinamento \(matchTime))")
 
@@ -172,7 +149,7 @@ func calibrate(_ click: SeratoClick) async {
 
         let ocrStart = Date()
         let texts = try TextRecognizer.recognize(image, pointSize: frame.size, languages: settings.ocrLanguages, fast: settings.fastOCR)
-        log.append("  testi riconosciuti: \(texts.count) in \(milliseconds(ocrStart)) (x, y, larghezza, altezza in punti)")
+        log.append("  testi riconosciuti: \(texts.count) in \(milliseconds(Date().timeIntervalSince(ocrStart))) (x, y, larghezza, altezza in punti)")
         for text in texts.sorted(by: { ($0.frame.minY, $0.frame.minX) < ($1.frame.minY, $1.frame.minX) }) {
             let f = text.frame
             log.append(String(format: "    %5.0f %5.0f %5.0f %4.0f  %@", f.minX, f.minY, f.width, f.height, text.text))
@@ -184,7 +161,8 @@ func calibrate(_ click: SeratoClick) async {
 
 // MARK: - Avvio
 
-let interceptor = ClickInterceptor(
+let interceptor = EventInterceptor(
+    modifier: settings.modifier.flags,
     accepts: { click in
         calibrate || settings.browserRect(in: click.windowFrame).contains(click.location)
     },
@@ -199,7 +177,7 @@ if NSRunningApplication.runningApplications(withBundleIdentifier: "com.serato.se
     print("Attenzione: Serato non è aperto. Lo aspetto…")
 }
 print(calibrate
-      ? "Calibrazione: fai ⌥+clic su una riga del browser di Serato. Ctrl-C per uscire.\n"
-      : "Pronto: fai ⌥+clic sul titolo di una traccia nel browser di Serato. Ctrl-C per uscire.\n")
+      ? "Calibrazione: fai \(settings.modifier.symbol)+clic su una riga del browser di Serato. Ctrl-C per uscire.\n"
+      : "Pronto: fai \(settings.modifier.symbol)+clic sul titolo di una traccia nel browser di Serato. Ctrl-C per uscire.\n")
 
 CFRunLoopRun()

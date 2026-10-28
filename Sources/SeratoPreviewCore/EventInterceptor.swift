@@ -10,11 +10,21 @@ public struct SeratoClick: Sendable {
     public let time: Date
 }
 
-/// Event tap globale. Un clic sinistro con il modificatore su una finestra normale di Serato,
-/// se `accepts` lo approva, viene consumato insieme ai trascinamenti e al rilascio che lo seguono,
-/// e passato a `onClick`. Ogni altro evento arriva a Serato invariato.
-/// Richiede il permesso Accessibilità.
-public final class ClickInterceptor {
+/// Un movimento della rotella o del trackpad.
+public struct ScrollEvent {
+    /// Righe (rotella) o punti (trackpad); positivo = verso l'alto.
+    public let delta: Double
+    /// true per trackpad e mouse a scorrimento continuo.
+    public let isContinuous: Bool
+    public let flags: CGEventFlags
+}
+
+/// Event tap globale. Richiede il permesso Accessibilità.
+/// - Clic sinistro con il modificatore su una finestra normale di Serato: se `accepts` lo approva
+///   viene consumato, insieme ai trascinamenti e al rilascio che lo seguono, e passato a `onClick`.
+/// - Esc e rotella vengono offerti a `onEscape` e `onScroll`, che decidono se consumarli.
+/// Ogni altro evento arriva a destinazione invariato. Le callback girano sul main thread.
+public final class EventInterceptor {
     public enum StartError: Error, CustomStringConvertible {
         case tapUnavailable
 
@@ -23,20 +33,29 @@ public final class ClickInterceptor {
         }
     }
 
-    private let bundleID: String
-    private let modifier: CGEventFlags
-    private let accepts: (SeratoClick) -> Bool
-    private let onClick: (SeratoClick) -> Void
+    public var isEnabled = true
+    public var modifier: CGEventFlags
+    public var accepts: (SeratoClick) -> Bool
+    public var onClick: (SeratoClick) -> Void
+    /// Esc premuto: restituire true per consumare il tasto.
+    public var onEscape: () -> Bool = { false }
+    /// Rotella: restituire true per consumare l'evento.
+    public var onScroll: (ScrollEvent) -> Bool = { _ in false }
 
+    public var isRunning: Bool { tap != nil }
+
+    private let bundleID: String
     private var tap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var swallowing = false
     private var serato: NSRunningApplication?
 
+    private static let escapeKeyCode: Int64 = 53
+
     public init(bundleID: String = "com.serato.seratodj",
                 modifier: CGEventFlags = .maskAlternate,
                 accepts: @escaping (SeratoClick) -> Bool = { _ in true },
-                onClick: @escaping (SeratoClick) -> Void) {
+                onClick: @escaping (SeratoClick) -> Void = { _ in }) {
         self.bundleID = bundleID
         self.modifier = modifier
         self.accepts = accepts
@@ -46,7 +65,8 @@ public final class ClickInterceptor {
     deinit { stop() }
 
     public func start() throws {
-        let types: [CGEventType] = [.leftMouseDown, .leftMouseDragged, .leftMouseUp]
+        guard tap == nil else { return }
+        let types: [CGEventType] = [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .keyDown, .scrollWheel]
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << CGEventMask($1.rawValue)) }
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -79,7 +99,8 @@ public final class ClickInterceptor {
             return pass
 
         case .leftMouseDown:
-            guard hasOnlyModifier(event.flags),
+            guard isEnabled,
+                  hasOnlyModifier(event.flags),
                   let pid = seratoPID(),
                   let window = Self.window(at: event.location, ownedBy: pid) else { return pass }
             let click = SeratoClick(location: event.location, windowID: window.id, windowFrame: window.frame, time: Date())
@@ -95,6 +116,19 @@ public final class ClickInterceptor {
             guard swallowing else { return pass }
             swallowing = false
             return nil
+
+        case .keyDown:
+            guard isEnabled, event.getIntegerValueField(.keyboardEventKeycode) == Self.escapeKeyCode else { return pass }
+            return onEscape() ? nil : pass
+
+        case .scrollWheel:
+            guard isEnabled else { return pass }
+            let continuous = event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0
+            let delta = continuous
+                ? event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1)
+                : Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis1))
+            guard delta != 0 else { return pass }
+            return onScroll(ScrollEvent(delta: delta, isContinuous: continuous, flags: event.flags)) ? nil : pass
 
         default:
             return pass
@@ -114,7 +148,8 @@ public final class ClickInterceptor {
     }
 
     /// La finestra più in alto sotto il punto, se è una finestra normale (livello 0) di `pid`.
-    /// Menu e popup di Serato hanno un livello diverso e non vengono intercettati.
+    /// Menu e popup di Serato hanno un livello diverso e non vengono intercettati; nemmeno le
+    /// finestre di altre app sopra Serato, come il mini-player.
     static func window(at point: CGPoint, ownedBy pid: pid_t) -> (id: CGWindowID, frame: CGRect)? {
         guard let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
                 as? [[String: Any]] else { return nil }
@@ -137,5 +172,5 @@ public final class ClickInterceptor {
 private func tapCallback(proxy: CGEventTapProxy, type: CGEventType, event: CGEvent,
                          userInfo: UnsafeMutableRawPointer?) -> Unmanaged<CGEvent>? {
     guard let userInfo else { return Unmanaged.passUnretained(event) }
-    return Unmanaged<ClickInterceptor>.fromOpaque(userInfo).takeUnretainedValue().handle(type: type, event: event)
+    return Unmanaged<EventInterceptor>.fromOpaque(userInfo).takeUnretainedValue().handle(type: type, event: event)
 }

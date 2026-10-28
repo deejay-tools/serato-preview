@@ -11,10 +11,15 @@ let package = Package(
             name: "SeratoLibrary",
             linkerSettings: [.linkedLibrary("sqlite3")]
         ),
-        // Intercettazione del clic, cattura della riga, OCR e impostazioni.
+        // Intercettazione degli eventi, cattura della riga, OCR, audio e impostazioni.
         .target(
             name: "SeratoPreviewCore",
             dependencies: ["SeratoLibrary"]
+        ),
+        // Fase 4: app nella barra dei menu. Si impacchetta come .app con Scripts/build-app.sh.
+        .executableTarget(
+            name: "SeratoPreview",
+            dependencies: ["SeratoLibrary", "SeratoPreviewCore"]
         ),
         // Fase 2: carica l'indice e stampa statistiche, campioni e tempi.
         .executableTarget(
