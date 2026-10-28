@@ -26,14 +26,23 @@ Nothing is sent over the network and Serato's library is never modified.
 
 ## Installation
 
-### 1. Get the code
+### Option A: download the release (recommended)
+
+1. Download `SeratoPreview-<version>.zip` from the [latest release](https://github.com/deejay-tools/serato-preview/releases/latest).
+2. Unzip it and move **Serato Preview.app** to `/Applications`.
+3. Open it. The app is signed with a Developer ID certificate and notarized by Apple, so Gatekeeper opens it directly, no right-click/"Open anyway" needed.
+4. Grant the two permissions described [below](#4-grant-the-permissions).
+
+### Option B: build from source
+
+#### 1. Get the code
 
 ```sh
 git clone https://github.com/deejay-tools/serato-preview.git
 cd serato-preview
 ```
 
-### 2. Create a signing certificate (once)
+#### 2. Create a signing certificate (once)
 
 macOS ties the Accessibility and Screen Recording permissions to the app's signature. With a fixed certificate the permissions survive rebuilds; without it you have to grant them again after every build.
 
@@ -43,7 +52,7 @@ macOS ties the Accessibility and Screen Recording permissions to the app's signa
 
 To use a certificate with a different name: `SIGN_IDENTITY="My name" ./Scripts/build-app.sh`.
 
-### 3. Build the app
+#### 3. Build the app
 
 ```sh
 ./Scripts/build-app.sh
@@ -51,7 +60,7 @@ To use a certificate with a different name: `SIGN_IDENTITY="My name" ./Scripts/b
 
 The result is `build/Serato Preview.app`. Move it to `/Applications` (or wherever you like) and open it: a headphones icon appears in the menu bar.
 
-### 4. Grant the permissions
+#### 4. Grant the permissions
 
 On first launch macOS asks for two permissions, both under **System Settings → Privacy & Security**:
 
@@ -199,7 +208,7 @@ Project layout:
 - `Sources/SeratoPreview`: the menu-bar app (menu, mini player, settings);
 - `Scripts/build-app.sh`: builds and signs the `.app`.
 
-App logs are visible in Console.app by filtering on the subsystem `local.mac7.SeratoPreview`.
+App logs are visible in Console.app by filtering on the subsystem `it.deejay-tools.SeratoPreview`.
 
 ## License
 

@@ -26,14 +26,23 @@ Non viene inviato nulla in rete e la libreria di Serato non viene mai modificata
 
 ## Installazione
 
-### 1. Scarica il codice
+### Opzione A: scarica la release (consigliata)
+
+1. Scarica `SeratoPreview-<versione>.zip` dall'[ultima release](https://github.com/deejay-tools/serato-preview/releases/latest).
+2. Estrai lo zip e sposta **Serato Preview.app** in `/Applicazioni`.
+3. Aprila. L'app è firmata con un certificato Developer ID e notarizzata da Apple, quindi Gatekeeper la apre direttamente, senza bisogno di tasto destro/"Apri comunque".
+4. Concedi i due permessi descritti [qui sotto](#4-concedi-i-permessi).
+
+### Opzione B: compila dal codice sorgente
+
+#### 1. Scarica il codice
 
 ```sh
 git clone https://github.com/deejay-tools/serato-preview.git
 cd serato-preview
 ```
 
-### 2. Crea un certificato di firma (una volta sola)
+#### 2. Crea un certificato di firma (una volta sola)
 
 macOS lega i permessi Accessibilità e Registrazione schermo alla firma dell'app. Con un certificato fisso i permessi restano anche dopo una nuova compilazione; senza, vanno ridati a ogni build.
 
@@ -43,7 +52,7 @@ macOS lega i permessi Accessibilità e Registrazione schermo alla firma dell'app
 
 Per usare un certificato con un altro nome: `SIGN_IDENTITY="Il mio nome" ./Scripts/build-app.sh`.
 
-### 3. Compila l'app
+#### 3. Compila l'app
 
 ```sh
 ./Scripts/build-app.sh
@@ -51,7 +60,7 @@ Per usare un certificato con un altro nome: `SIGN_IDENTITY="Il mio nome" ./Scrip
 
 Il risultato è `build/Serato Preview.app`. Spostala in `/Applicazioni` (o dove preferisci) e aprila: nella barra dei menu compare l'icona delle cuffie.
 
-### 4. Concedi i permessi
+#### 4. Concedi i permessi
 
 Al primo avvio macOS chiede due permessi, entrambi in **Impostazioni di Sistema → Privacy e sicurezza**:
 
@@ -199,7 +208,7 @@ Struttura del progetto:
 - `Sources/SeratoPreview`: l'app nella barra dei menu (menu, mini-player, impostazioni);
 - `Scripts/build-app.sh`: compila e firma la `.app`.
 
-I log dell'app si vedono in Console filtrando per il sottosistema `local.mac7.SeratoPreview`.
+I log dell'app si vedono in Console filtrando per il sottosistema `it.deejay-tools.SeratoPreview`.
 
 ## Licenza
 
