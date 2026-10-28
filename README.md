@@ -163,6 +163,10 @@ Project layout:
 
 App logs are visible in Console.app by filtering on the subsystem `local.mac7.SeratoPreview`.
 
+## License
+
+[MIT](LICENSE).
+
 ## Disclaimer
 
 Serato Preview is an independent personal project, not affiliated with or endorsed by Serato. "Serato" and "Serato DJ Pro" are trademarks of their respective owners.

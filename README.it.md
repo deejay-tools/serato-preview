@@ -163,6 +163,10 @@ Struttura del progetto:
 
 I log dell'app si vedono in Console filtrando per il sottosistema `local.mac7.SeratoPreview`.
 
+## Licenza
+
+[MIT](LICENSE).
+
 ## Avvertenza
 
 Serato Preview è un progetto personale indipendente, non affiliato né approvato da Serato. "Serato" e "Serato DJ Pro" sono marchi dei rispettivi proprietari.
