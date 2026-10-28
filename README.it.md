@@ -29,7 +29,7 @@ Non viene inviato nulla in rete e la libreria di Serato non viene mai modificata
 ### 1. Scarica il codice
 
 ```sh
-git clone https://github.com/gdessi1965/serato-preview.git
+git clone https://github.com/deejay-tools/serato-preview.git
 cd serato-preview
 ```
 

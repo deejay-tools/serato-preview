@@ -29,7 +29,7 @@ Nothing is sent over the network and Serato's library is never modified.
 ### 1. Get the code
 
 ```sh
-git clone https://github.com/gdessi1965/serato-preview.git
+git clone https://github.com/deejay-tools/serato-preview.git
 cd serato-preview
 ```
 
