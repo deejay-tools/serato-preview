@@ -7,7 +7,7 @@
 	<key>CFBundleExecutable</key>
 	<string>SeratoPreview</string>
 	<key>CFBundleIdentifier</key>
-	<string>local.mac7.SeratoPreview</string>
+	<string>it.deejay-tools.SeratoPreview</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

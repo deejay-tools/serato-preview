@@ -56,7 +56,7 @@ final class PreviewController: ObservableObject {
 
     var isPreviewing: Bool { player.isPlaying }
 
-    private let log = Logger(subsystem: "local.mac7.SeratoPreview", category: "preview")
+    private let log = Logger(subsystem: "it.deejay-tools.SeratoPreview", category: "preview")
     private let identifier = RowIdentifier()
     private let player = PreviewPlayer()
     private let interceptor = EventInterceptor()
