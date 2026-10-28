@@ -23,6 +23,8 @@ public struct Track: Sendable {
     public let title: String
     public let artist: String
     public let album: String
+    public let genre: String
+    public let year: String
     public let bpm: Double?
     public let key: String
     public let lengthMs: Int64?
@@ -93,7 +95,7 @@ public struct SeratoLibraryReader {
 
         var tracks: [Track] = []
         try database.query("""
-            SELECT id, location_id, portable_id, name, artist, album, bpm, key, length_ms, is_missing
+            SELECT id, location_id, portable_id, name, artist, album, genre, year, bpm, key, length_ms, is_missing
             FROM asset
             """) { row in
             let locationID = row.int(1) ?? -1
@@ -111,11 +113,13 @@ public struct SeratoLibraryReader {
                 title: row.text(3),
                 artist: row.text(4),
                 album: row.text(5),
-                bpm: row.double(6),
-                key: row.text(7),
-                lengthMs: row.int(8),
+                genre: row.text(6),
+                year: row.text(7),
+                bpm: row.double(8),
+                key: row.text(9),
+                lengthMs: row.int(10),
                 source: source,
-                isMissing: (row.int(9) ?? 0) != 0
+                isMissing: (row.int(11) ?? 0) != 0
             ))
         }
 

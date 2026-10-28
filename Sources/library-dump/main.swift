@@ -4,6 +4,9 @@
 //   swift run library-dump                      riepilogo + 10 campioni + verifica di 300 file
 //   swift run library-dump --search "testo"     tracce il cui titolo o artista contiene il testo
 //   swift run library-dump --samples 20 --check 1000
+//   swift run library-dump --match "In my eyes|Milk Inc.|139.0|Am"
+//                                               abbinamento di una riga come la leggerebbe l'OCR
+//                                               (pezzi separati da |)
 
 import Foundation
 import SeratoLibrary
@@ -36,6 +39,25 @@ do {
 } catch {
     fputs("\(error)\n", stderr)
     exit(1)
+}
+
+// MARK: - Abbinamento di prova
+
+if let row = option("--match") {
+    let buildStart = Date()
+    let matcher = TrackMatcher(tracks: index.tracks)
+    print("Indice per l'abbinamento: \(milliseconds(Date().timeIntervalSince(buildStart)))")
+
+    let cells = row.split(separator: "|").map { $0.trimmingCharacters(in: .whitespaces) }
+    let matchStart = Date()
+    let matches = matcher.match(cells, limit: 5)
+    print("Riga: \(cells.map { "\"\($0)\"" }.joined(separator: " | ")) (\(milliseconds(Date().timeIntervalSince(matchStart))))")
+    for match in matches {
+        let artist = match.artistRecall.map { String(format: "%.2f", $0) } ?? "-"
+        print(String(format: "  %.2f (titolo %.2f, artista %@, precisione %.2f)  ", match.score, match.titleRecall, artist, match.precision)
+              + describe(match.track))
+    }
+    exit(0)
 }
 
 // MARK: - Riepilogo
