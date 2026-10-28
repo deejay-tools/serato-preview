@@ -1,0 +1,19 @@
+Serato: pid 18340, bundle com.serato.seratodj
+
+AXApplication title="Serato DJ Pro" figli=2
+  AXWindow [AXStandardWindow] title="Serato DJ Pro" @(0, 25) 1680×1013 figli=4
+    AXButton [AXCloseButton] @(6, 31) 16×16
+    AXButton [AXZoomButton] @(46, 31) 16×16 figli=1
+      AXGroup @(47, 31) 14×16
+    AXButton [AXMinimizeButton] @(26, 31) 16×16
+    AXStaticText value="Serato DJ Pro" @(793, 30) 93×16
+
+=== Riepilogo ===
+Elementi visitati: 7
+Elementi con testo: 3
+Ruoli: AXButton×3, AXApplication×1, AXStaticText×1, AXWindow×1, AXGroup×1
+Campioni di testo:
+  AXApplication title="Serato DJ Pro"
+  AXWindow title="Serato DJ Pro"
+  AXStaticText value="Serato DJ Pro"
+→ Nessun ruolo tabellare: il browser è probabilmente disegnato in proprio (strada OCR).
