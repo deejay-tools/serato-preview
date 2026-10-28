@@ -10,19 +10,23 @@ public struct SeratoClick: Sendable {
     public let time: Date
 }
 
-/// Un movimento della rotella o del trackpad.
-public struct ScrollEvent {
-    /// Righe (rotella) o punti (trackpad); positivo = verso l'alto.
-    public let delta: Double
-    /// true per trackpad e mouse a scorrimento continuo.
-    public let isContinuous: Bool
-    public let flags: CGEventFlags
+/// Un tasto premuto, anche per ripetizione automatica.
+public struct KeyPress {
+    public enum Key {
+        case escape
+        case left
+        case right
+    }
+
+    public let key: Key
+    /// Premuto senza ⌘, ⌥, ⌃ né ⇧.
+    public let isPlain: Bool
 }
 
 /// Event tap globale. Richiede il permesso Accessibilità.
 /// - Clic sinistro con il modificatore su una finestra normale di Serato: se `accepts` lo approva
 ///   viene consumato, insieme ai trascinamenti e al rilascio che lo seguono, e passato a `onClick`.
-/// - Esc e rotella vengono offerti a `onEscape` e `onScroll`, che decidono se consumarli.
+/// - Esc, ← e → vengono offerti a `onKey`, che decide se consumarli.
 /// Ogni altro evento arriva a destinazione invariato. Le callback girano sul main thread.
 public final class EventInterceptor {
     public enum StartError: Error, CustomStringConvertible {
@@ -37,10 +41,8 @@ public final class EventInterceptor {
     public var modifier: CGEventFlags
     public var accepts: (SeratoClick) -> Bool
     public var onClick: (SeratoClick) -> Void
-    /// Esc premuto: restituire true per consumare il tasto.
-    public var onEscape: () -> Bool = { false }
-    /// Rotella: restituire true per consumare l'evento.
-    public var onScroll: (ScrollEvent) -> Bool = { _ in false }
+    /// Tasto premuto: restituire true per consumarlo.
+    public var onKey: (KeyPress) -> Bool = { _ in false }
 
     public var isRunning: Bool { tap != nil }
 
@@ -50,7 +52,8 @@ public final class EventInterceptor {
     private var swallowing = false
     private var serato: NSRunningApplication?
 
-    private static let escapeKeyCode: Int64 = 53
+    private static let keys: [Int64: KeyPress.Key] = [53: .escape, 123: .left, 124: .right]
+    private static let modifierMasks: [CGEventFlags] = [.maskAlternate, .maskCommand, .maskControl, .maskShift]
 
     public init(bundleID: String = "com.serato.seratodj",
                 modifier: CGEventFlags = .maskAlternate,
@@ -66,7 +69,7 @@ public final class EventInterceptor {
 
     public func start() throws {
         guard tap == nil else { return }
-        let types: [CGEventType] = [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .keyDown, .scrollWheel]
+        let types: [CGEventType] = [.leftMouseDown, .leftMouseDragged, .leftMouseUp, .keyDown]
         let mask = types.reduce(CGEventMask(0)) { $0 | (CGEventMask(1) << CGEventMask($1.rawValue)) }
         guard let tap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
@@ -118,17 +121,9 @@ public final class EventInterceptor {
             return nil
 
         case .keyDown:
-            guard isEnabled, event.getIntegerValueField(.keyboardEventKeycode) == Self.escapeKeyCode else { return pass }
-            return onEscape() ? nil : pass
-
-        case .scrollWheel:
-            guard isEnabled else { return pass }
-            let continuous = event.getIntegerValueField(.scrollWheelEventIsContinuous) != 0
-            let delta = continuous
-                ? event.getDoubleValueField(.scrollWheelEventPointDeltaAxis1)
-                : Double(event.getIntegerValueField(.scrollWheelEventDeltaAxis1))
-            guard delta != 0 else { return pass }
-            return onScroll(ScrollEvent(delta: delta, isContinuous: continuous, flags: event.flags)) ? nil : pass
+            guard isEnabled, let key = Self.keys[event.getIntegerValueField(.keyboardEventKeycode)] else { return pass }
+            let isPlain = Self.modifierMasks.allSatisfy { !event.flags.contains($0) }
+            return onKey(KeyPress(key: key, isPlain: isPlain)) ? nil : pass
 
         default:
             return pass
@@ -136,8 +131,7 @@ public final class EventInterceptor {
     }
 
     private func hasOnlyModifier(_ flags: CGEventFlags) -> Bool {
-        let relevant: [CGEventFlags] = [.maskAlternate, .maskCommand, .maskControl, .maskShift]
-        return relevant.allSatisfy { flags.contains($0) == modifier.contains($0) }
+        Self.modifierMasks.allSatisfy { flags.contains($0) == modifier.contains($0) }
     }
 
     private func seratoPID() -> pid_t? {

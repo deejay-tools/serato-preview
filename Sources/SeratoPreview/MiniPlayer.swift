@@ -89,7 +89,7 @@ struct MiniPlayerView: View {
                 HStack {
                     Text(Self.format(controller.position))
                     Spacer()
-                    Text("\(controller.settings.modifier.symbol)+rotella sposta · Esc ferma")
+                    Text("← → sposta · Esc ferma")
                     Spacer()
                     Text("-" + Self.format(controller.duration - controller.position))
                 }

@@ -47,7 +47,7 @@ struct SettingsView: View {
                             Text("\(Int((draft.volume * 100).rounded()))%").monospacedDigit().frame(width: 40)
                         }
                     }
-                    Stepper("Salto con la rotella: \(Int(draft.seekStep)) s", value: $draft.seekStep, in: 1...30)
+                    Stepper("Salto con ← →: \(Int(draft.seekStep)) s", value: $draft.seekStep, in: 1...30)
                 }
 
                 Section("Browser di Serato (punti)") {

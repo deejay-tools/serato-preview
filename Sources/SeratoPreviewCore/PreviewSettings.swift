@@ -18,7 +18,7 @@ public struct PreviewSettings: Codable, Equatable {
         }
     }
 
-    /// Tasti da tenere premuti durante il clic (e la rotella) per l'anteprima.
+    /// Tasti da tenere premuti durante il clic per l'anteprima.
     public enum Modifier: String, Codable, CaseIterable, Identifiable {
         case option
         case control
@@ -59,7 +59,7 @@ public struct PreviewSettings: Codable, Equatable {
     /// Punto di partenza come frazione della durata.
     public var startFraction: Double
     public var volume: Double
-    /// Secondi di spostamento per ogni scatto della rotella.
+    /// Secondi di spostamento per ogni pressione di ← o →.
     public var seekStep: Double
 
     // MARK: Geometria del browser

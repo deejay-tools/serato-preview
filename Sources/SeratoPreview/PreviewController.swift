@@ -42,15 +42,12 @@ final class PreviewController: ObservableObject {
     private var currentTrack: Track?
     private var clickGeneration = 0
     private var messageGeneration = 0
-    private var scrollAccumulator = 0.0
     private var progressTimer: Timer?
     private var permissionTimer: Timer?
     private var libraryTimer: Timer?
 
     /// Ogni quanto controllare se Serato ha modificato la libreria.
     private let libraryCheckInterval: TimeInterval = 60
-    /// Punti di scorrimento del trackpad che valgono uno scatto della rotella.
-    private let continuousScrollStep = 40.0
 
     init() {
         do {
@@ -98,15 +95,8 @@ final class PreviewController: ObservableObject {
         interceptor.onClick = { [weak self] click in
             MainActor.assumeIsolated { self?.handle(click) }
         }
-        interceptor.onEscape = { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, self.player.isPlaying else { return false }
-                self.stopPreview()
-                return true
-            }
-        }
-        interceptor.onScroll = { [weak self] event in
-            MainActor.assumeIsolated { self?.handle(event) ?? false }
+        interceptor.onKey = { [weak self] key in
+            MainActor.assumeIsolated { self?.handle(key) ?? false }
         }
     }
 
@@ -248,7 +238,6 @@ final class PreviewController: ObservableObject {
             return
         }
         currentTrack = track
-        scrollAccumulator = 0
         duration = player.duration
         position = player.position
         status = .playing(title: track.title, subtitle: subtitle(for: track))
@@ -272,20 +261,19 @@ final class PreviewController: ObservableObject {
             """)
     }
 
-    // MARK: - Esc e rotella
+    // MARK: - Tastiera
 
-    private func handle(_ event: ScrollEvent) -> Bool {
-        guard player.isPlaying, event.flags.contains(settings.modifier.flags) else { return false }
-        let steps: Double
-        if event.isContinuous {
-            scrollAccumulator += event.delta
-            steps = (scrollAccumulator / continuousScrollStep).rounded(.towardZero)
-            scrollAccumulator -= steps * continuousScrollStep
-        } else {
-            steps = event.delta
-        }
-        if steps != 0 {
-            player.seek(by: steps * settings.seekStep)
+    /// Solo durante l'anteprima e senza modificatori: Esc ferma, ← → spostano. Altrimenti il tasto va a Serato.
+    private func handle(_ press: KeyPress) -> Bool {
+        guard player.isPlaying, press.isPlain else { return false }
+        switch press.key {
+        case .escape:
+            stopPreview()
+        case .left:
+            player.seek(by: -settings.seekStep)
+            position = player.position
+        case .right:
+            player.seek(by: settings.seekStep)
             position = player.position
         }
         return true
